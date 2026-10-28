@@ -1,0 +1,27 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+mingit/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Raw large dataset archive (17MB zip not needed in production since model is trained)
+data/raw/archive.zip
+data/raw/
+data/processed/
+
+# Local databases and runtime caches
+*.db
+*.sqlite3
+data/scans_cache/
+data/reports/
+.cache/
+
+# OS artifacts
+Thumbs.db
+.DS_Store

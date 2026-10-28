@@ -1,0 +1,138 @@
+{
+  "degree_1": {
+    "title": "Degree 1 Burn (Superficial / Prathama Dagdha)",
+    "severity_level": "Mild - Superficial Epidermal Involvement",
+    "dosha_involvement": "Pitta and Rakta Vitiation (Pitta-Rakta Pradhana)",
+    "clinical_presentation": "Affects only the outermost layer of skin (epidermis). Characterized by localized redness (erythema), mild swelling, heat sensation (Daha), and tenderness without blister formation.",
+    "immediate_first_aid": [
+      "Immerse or flush the affected area under gentle, cool running tap water for 10 to 15 minutes.",
+      "Never apply ice or ice-cold water directly, as extreme cold causes vasoconstriction and exacerbates tissue ischemia.",
+      "Gently pat the area dry with a sterile cotton gauze without rubbing."
+    ],
+    "ayurvedic_topical_therapies": [
+      {
+        "remedy": "Shatadhauta Ghrita (100-times Washed Ghee)",
+        "method": "Gently apply a thin layer over the reddened skin twice daily.",
+        "benefit": "Renowned in Charaka Samhita for extreme cooling (Sheeta Virya), anti-inflammatory, and epidermal barrier repairing properties."
+      },
+      {
+        "remedy": "Kumari Swarasa (Fresh Aloe Vera Inner Gel)",
+        "method": "Extract pure transparent pulp from fresh Aloe vera leaf and apply gently.",
+        "benefit": "Deeply hydrating, restores epidermal moisture, relieves burning sensation (Daha-prashamana)."
+      },
+      {
+        "remedy": "Yashtimadhu & Chandana Lepa (Licorice & Sandalwood)",
+        "method": "Mix equal parts pure white sandalwood and licorice powder with rose water into a fine cooling paste; apply for 20 minutes.",
+        "benefit": "Accelerates re-epithelialization and alleviates erythema."
+      }
+    ],
+    "dietary_guidelines": [
+      "Consume Pitta-pacifying foods: sweet pomegranates, tender coconut water, watermelon, and cucumber.",
+      "Drink Dhanyaka Hima (coriander seed cold infusion) to cool internal bodily heat.",
+      "Strictly avoid excessively hot, spicy, sour, salty, deep-fried, and fermented foods for 5-7 days."
+    ],
+    "safety_precautions": [
+      "Do NOT apply raw butter, cooking oils, flour, or toothpaste.",
+      "Keep the skin protected from direct sun exposure until erythema has fully resolved.",
+      "If redness spreads, pain worsens after 48 hours, or fever develops, consult a doctor immediately."
+    ]
+  },
+  "degree_2": {
+    "title": "Degree 2 Burn (Partial Thickness / Dvitiya Dagdha)",
+    "severity_level": "Moderate to Serious - Epidermis & Dermis Involvement",
+    "dosha_involvement": "High Pitta-Vata Vitiation with Twak-Mamsa Dhatu Disruption",
+    "clinical_presentation": "Damage extends through the epidermis into the papillary/reticular dermis. Characterized by fluid-filled blisters (Sphota), intense pain, raw weeping red or mottled base, and elevated risk of microbial infection.",
+    "immediate_first_aid": [
+      "Cool the area under gentle room-temperature water for 15 minutes.",
+      "CRITICAL: Do NOT burst, puncture, or peel skin blisters. The blister roof acts as a sterile biological dressing.",
+      "Cover loosely with a clean, sterile non-stick bandage or sterile gauze."
+    ],
+    "ayurvedic_topical_therapies": [
+      {
+        "remedy": "Jatyadi Ghrita / Jatyadi Taila",
+        "method": "After cleansing the wound perimeter with sterile saline, apply sterile Jatyadi Ghrita-infused non-stick gauze.",
+        "benefit": "Classical formulation of Jati (Jasmine), Nimba (Neem), and Haridra (Turmeric) providing profound Vrana Shodhana (wound purification) and Vrana Ropana (healing acceleration)."
+      },
+      {
+        "remedy": "Triphala Kashaya Gentle Wash",
+        "method": "Prepare a mild, sterile, filtered decoction of Triphala, cool to room temperature, and use for peri-wound irrigation.",
+        "benefit": "Natural astringent (Kashaya rasa) and antibacterial wash that minimizes bacterial biofilm without tissue toxicity."
+      },
+      {
+        "remedy": "Ropaka Ghrita Application",
+        "method": "Apply as directed by an Ayurvedic practitioner once the blister stage enters epithelial consolidation.",
+        "benefit": "Promotes smooth granulation tissue formation and reduces potential hypertrophic scarring."
+      }
+    ],
+    "dietary_guidelines": [
+      "High protein and collagen supporting foods: Moong dal soup (Yusha) cooked with a dash of turmeric and cumin.",
+      "Take Amalaki (Indian Gooseberry) juice or Churna daily for potent natural Vitamin C to support dermal repair.",
+      "Guduchi (Giloy) decoction: 15-20 ml twice daily to enhance systemic immunity and prevent secondary infection."
+    ],
+    "safety_precautions": [
+      "Never pick, scratch, or peel peeling skin.",
+      "Seek in-person clinical medical evaluation if the burn covers an area larger than 2-3 inches or involves the face, hands, joints, feet, or groin.",
+      "Watch constantly for signs of sepsis/cellulitis: foul odor, pus discharge, worsening margin redness, or fever."
+    ]
+  },
+  "degree_3": {
+    "title": "Degree 3 Burn (Full Thickness / Tritiya Dagdha)",
+    "severity_level": "CRITICAL EMERGENCY - Full Thickness Tissue Destruction",
+    "dosha_involvement": "Severe Tridosha Collapse with Mamsa-Medas-Asthi Kshaya & Ojo-Kshaya",
+    "clinical_presentation": "Destruction of all skin layers (epidermis, dermis) down to subcutaneous fat, muscle, or bone. Appears dry, leathery, waxy white, translucent, brown, or charred black. Often painless at the center due to complete destruction of sensory nerve endings, though surrounding areas are excruciatingly painful.",
+    "immediate_first_aid": [
+      "EMERGENCY ACTION: Call emergency medical services (911 / 108 / 112) IMMEDIATELY.",
+      "DO NOT apply any ointments, home remedies, herbs, oils, or ice to full-thickness burns.",
+      "Do NOT pull away clothing stuck to the burn site.",
+      "Cover the area loosely with a clean, dry, sterile sheet or non-adherent sterile dressing.",
+      "Elevate the burned area above heart level if possible to reduce severe edema.",
+      "Monitor patient breathing, pulse, and signs of hypovolemic shock (pale, cold, clammy skin, confusion)."
+    ],
+    "ayurvedic_topical_therapies": [
+      {
+        "remedy": "ACUTE EMERGENCY CONTRAINDICATION",
+        "method": "NO TOPICAL AYURVEDIC OR HERBAL APPLICATION PERMITTED IN ACUTE STAGE.",
+        "benefit": "Requires immediate hospital burn ICU admission, intravenous fluid resuscitation (Parkland formula), sterile surgical debridement, and biological skin grafting."
+      }
+    ],
+    "dietary_guidelines": [
+      "Intensive hospital enteral/parenteral clinical nutrition is mandatory during the critical phase.",
+      "Do not give oral fluids or food if the patient is scheduled for immediate emergency surgery or in shock."
+    ],
+    "safety_precautions": [
+      "Life-threatening emergency. High mortality risk from hypovolemic shock, respiratory compromise, and systemic sepsis.",
+      "Only after complete surgical stabilization, grafting, and clinical hospital discharge should supportive Ayurvedic Rasayana therapies (such as Shatavari, Ashwagandha, and Vaikrityahara scar management formulations like Kumkumadi / Eladi) be introduced under physician guidance."
+    ]
+  },
+  "healthy": {
+    "title": "Healthy Skin (Prakriti Twak / Normal Barrier)",
+    "severity_level": "Normal - Intact Epidermal & Dermal Barrier",
+    "dosha_involvement": "Balanced Tridosha (Sama Pitta, Sama Vata, Sama Kapha)",
+    "clinical_presentation": "Normal healthy skin with intact stratum corneum, optimal hydration, uniform pigmentation, natural resilience, and absence of erythema, blisters, thermal burns, or ulcerations.",
+    "immediate_first_aid": [
+      "No burn treatment required.",
+      "Maintain everyday preventive skin hygiene and protective barriers."
+    ],
+    "ayurvedic_topical_therapies": [
+      {
+        "remedy": "Daily Abhyanga (Herbal Self-Massage)",
+        "method": "Warm cold-pressed organic Sesame oil (Vata/Kapha) or Coconut oil (Pitta) and massage gently before bathing.",
+        "benefit": "Strengthens dermal barrier, stimulates microcirculation, enhances skin elasticity and natural radiance (Kanti)."
+      },
+      {
+        "remedy": "Snana Choorna (Herbal Cleansing Powder)",
+        "method": "Substitute harsh chemical sulfates with an herbal blend of chickpea flour, sandalwood powder, vetiver, and wild turmeric.",
+        "benefit": "Cleanses without stripping natural lipid mantle."
+      }
+    ],
+    "dietary_guidelines": [
+      "Eat freshly prepared, warm, seasonal, whole foods.",
+      "Drink adequate warm or room-temperature water throughout the day.",
+      "Include healthy fats such as organic A2 Cow Ghee to nourish Twak Dhatu from within."
+    ],
+    "safety_precautions": [
+      "Protect against thermal injury by practicing fire and kitchen safety.",
+      "Use mineral sunscreen and natural protective clothing when exposed to intense UV sunlight."
+    ]
+  }
+}
