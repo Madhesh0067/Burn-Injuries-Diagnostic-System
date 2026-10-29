@@ -240,25 +240,41 @@ if menu == "🔍 Diagnostic Studio":
                 outputs = model(input_tensor)
                 probs = F.softmax(outputs, dim=1).detach().cpu().numpy()[0]
 
-                # Physiological Tissue Erythema & Barrier Integrity Assessment
-                # Evaluates tissue chromophore balance, erythema excess, and red-to-green ratio.
-                # Healthy human skin (Fitzpatrick I-VI) lacks acute burning inflammatory erythema,
-                # exudative blistering margins, or coagulated necrotic eschar.
+                # ----------------- HIERARCHICAL CLINICAL TRIAGE -----------------
+                # CLASS_NAMES = ["degree_1", "degree_2", "degree_3", "healthy"]
+                # Medical decision protocol: Thermal Injury Detection vs. Intact Integument
+                p_burn_total = float(probs[0] + probs[1] + probs[2])
+                p_healthy = float(probs[3])
+
+                if p_burn_total >= p_healthy:
+                    # Definite thermal injury detected: Select predominant burn severity grade
+                    burn_indices = [0, 1, 2]
+                    pred_idx = int(burn_indices[int(np.argmax([probs[0], probs[1], probs[2]]))])
+                    pred_class = CLASS_NAMES[pred_idx]
+                    confidence = round(max(float(probs[pred_idx]), p_burn_total) * 100, 2)
+                    is_burn_diagnosed = True
+                else:
+                    # Intact skin confirmed
+                    pred_idx = 3
+                    pred_class = "healthy"
+                    confidence = round(p_healthy * 100, 2)
+                    is_burn_diagnosed = False
+
+                # Tissue Hotspot Biomarker Analysis (excludes neutral studio walls & gray sheets)
                 arr_rgb = np.array(selected_pil, dtype=np.float32)
                 r_chan, g_chan, b_chan = arr_rgb[:, :, 0], arr_rgb[:, :, 1], arr_rgb[:, :, 2]
-                red_excess = float(np.mean(r_chan - (g_chan + b_chan) / 2.0))
-                rg_ratio = float(np.mean(r_chan) / (np.mean(g_chan) + 1e-5))
+                is_neutral_bg = (np.abs(r_chan - g_chan) < 14) & (np.abs(r_chan - b_chan) < 14)
+                is_extreme = (r_chan < 30) | (r_chan > 245)
+                tissue_mask = ~(is_neutral_bg | is_extreme)
+                red_excess_map = r_chan - (g_chan + b_chan) / 2.0
 
-                # Calibrate healthy skin probability when erythema is physiological rather than burn-induced
-                if red_excess < 28.0 and rg_ratio < 1.30:
-                    health_factor = min(0.60, max(0.15, (28.0 - red_excess) * 0.02 + (1.30 - rg_ratio) * 0.3))
-                    probs[3] += health_factor
-                    probs = probs / np.sum(probs)
+                if np.any(tissue_mask):
+                    red_excess_hotspot = float(np.percentile(red_excess_map[tissue_mask], 90))
+                    rg_ratio = float(np.mean(r_chan[tissue_mask]) / (np.mean(g_chan[tissue_mask]) + 1e-5))
+                else:
+                    red_excess_hotspot = float(np.percentile(red_excess_map, 90))
+                    rg_ratio = float(np.mean(r_chan) / (np.mean(g_chan) + 1e-5))
 
-                pred_idx = int(np.argmax(probs))
-                pred_class = CLASS_NAMES[pred_idx]
-                confidence = float(probs[pred_idx])
-                
                 # Grad-CAM heatmap
                 heatmap = gradcam.generate_heatmap(input_tensor, target_class=pred_idx)
                 blended_pil, colored_cam = gradcam.overlay_heatmap(selected_pil, heatmap, alpha=alpha_val)
@@ -296,15 +312,18 @@ if menu == "🔍 Diagnostic Studio":
                 st.progress(min(pct / 100.0, 1.0))
 
             # Tissue Biomarker Summary
-            status_desc = "Intact Stratum Corneum & Normal Dermis" if pred_class == "healthy" else ("Superficial Epidermal Injury (Erythema)" if pred_class == "degree_1" else ("Partial-Thickness Blister / Dermal Exudate" if pred_class == "degree_2" else "Full-Thickness Coagulation Necrosis / Eschar"))
-            erythema_desc = "Normal Physiological Baseline" if red_excess < 28.0 else ("Moderate Erythema" if red_excess < 55.0 else "Acute Inflammatory Hyperemia / Dermal Congestion")
+            status_desc = "Intact Stratum Corneum & Dermis" if pred_class == "healthy" else ("Superficial Epidermal Injury (Erythema)" if pred_class == "degree_1" else ("Partial-Thickness Blister / Dermal Exudate" if pred_class == "degree_2" else "Full-Thickness Coagulation Necrosis / Eschar"))
+            erythema_desc = "Normal Baseline" if red_excess_hotspot < 30.0 else ("Moderate Erythema" if red_excess_hotspot < 50.0 else "Acute Inflammatory Hyperemia / Dermal Injury")
+            triage_summary = f"Thermal Injury Identified (Cumulative Burn Evidence: {p_burn_total*100:.1f}% vs. Healthy: {p_healthy*100:.1f}%)" if is_burn_diagnosed else f"Intact Epidermal Barrier Confirmed (Healthy Skin Evidence: {p_healthy*100:.1f}%)"
+
             st.markdown(f"""
             <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-top: 10px; margin-bottom: 12px;">
                 <p style="margin: 0; font-size: 0.85rem; color: #475569;">
-                    <b>🔬 Tissue Biomarker Analysis:</b><br/>
-                    • <b>Erythema Index:</b> {red_excess:.1f} ({erythema_desc})<br/>
-                    • <b>Chromophore Balance (R/G Ratio):</b> {rg_ratio:.2f}<br/>
-                    • <b>Integumentary Barrier:</b> {status_desc}
+                    <b>🔬 Clinical Triage & Biomarker Assessment:</b><br/>
+                    • <b>Triage Assessment:</b> {triage_summary}<br/>
+                    • <b>Lesion Hotspot Erythema:</b> {red_excess_hotspot:.1f} ({erythema_desc})<br/>
+                    • <b>Tissue Chromophore Ratio (R/G):</b> {rg_ratio:.2f}<br/>
+                    • <b>Integumentary Barrier Status:</b> {status_desc}
                 </p>
             </div>
             """, unsafe_allow_html=True)
