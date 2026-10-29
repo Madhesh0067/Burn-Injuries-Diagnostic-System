@@ -80,80 +80,114 @@ def extract_candidate_crops(pil_img: Image.Image):
     without being diluted by surrounding unburned healthy skin or clothing/background.
     """
     w, h = pil_img.size
-    crops = [pil_img] # Always include the global whole image
-    
+    crops = [pil_img]
     arr = np.array(pil_img, dtype=np.float32)
     r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
     
-    # Tissue mask (exclude studio white, extreme dark, and neutral gray)
-    is_neutral = (np.abs(r - g) < 14) & (np.abs(r - b) < 14)
-    is_extreme = (r < 30) | (r > 248)
-    skin_mask = ~(is_neutral | is_extreme) & (r > g) & (g > b * 0.7)
+    # Human skin segmentation in YCbCr + RGB
+    ycbcr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2YCrCb)
+    cr = ycbcr[:, :, 1]
+    cb = ycbcr[:, :, 2]
+    skin_mask = (cr >= 130) & (cr <= 180) & (cb >= 75) & (cb <= 140) & (r > g) & (r > b) & (r > 50)
     
-    if np.sum(skin_mask) > 100:
-        # Erythema anomaly map relative to skin baseline
-        red_excess = r - (g + b) / 2.0
-        skin_re = red_excess[skin_mask]
-        re_thresh = np.percentile(skin_re, 80)
-        hotspot_mask = (red_excess >= re_thresh) & skin_mask
+    if np.sum(skin_mask) < 200:
+        is_neutral = (np.abs(r - g) < 14) & (np.abs(r - b) < 14)
+        is_extreme = (r < 30) | (r > 248)
+        skin_mask = ~(is_neutral | is_extreme) & (r > g) & (g > b * 0.7)
         
-        # Texture gradient anomaly (blisters, peeling epidermal sheets, necrotic eschar)
+    if np.sum(skin_mask) >= 200:
+        # Localized lesion anomaly (erythema + blister gradient)
+        red_excess = r - (g + b) / 2.0
+        median_re = np.median(red_excess[skin_mask])
+        re_dev = red_excess - median_re
+        
         gray = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2GRAY)
         grad = cv2.Sobel(gray, cv2.CV_32F, 1, 1)
         grad_mag = np.abs(grad)
-        grad_thresh = np.percentile(grad_mag[skin_mask], 85)
-        anomaly_mask = hotspot_mask | ((grad_mag >= grad_thresh) & skin_mask)
+        med_grad = np.median(grad_mag[skin_mask])
+        grad_dev = grad_mag - med_grad
         
-        mask_u8 = (anomaly_mask.astype(np.uint8) * 255)
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-        dilated = cv2.dilate(mask_u8, kernel, iterations=2)
-        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)
+        anomaly_score = np.zeros_like(r)
+        anomaly_score[skin_mask] = np.maximum(0, re_dev[skin_mask]) * 0.6 + np.maximum(0, grad_dev[skin_mask]) * 0.4
         
-        for c in contours[:2]:
-            x, y, cw, ch = cv2.boundingRect(c)
-            pad_x = int(cw * 0.2)
-            pad_y = int(ch * 0.2)
-            x1 = max(0, x - pad_x)
-            y1 = max(0, y - pad_y)
-            x2 = min(w, x + cw + pad_x)
-            y2 = min(h, y + ch + pad_y)
-            if (x2 - x1) >= 40 and (y2 - y1) >= 40:
-                crops.append(pil_img.crop((x1, y1, x2, y2)))
+        p90 = np.percentile(anomaly_score[skin_mask], 90)
+        lesion_core = (anomaly_score >= p90) & skin_mask
+        
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        dilated = cv2.dilate(lesion_core.astype(np.uint8), kernel, iterations=1)
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(dilated)
+        
+        clusters = []
+        for i in range(1, num_labels):
+            cx, cy, cw, ch, area = stats[i]
+            if area >= 60:
+                clusters.append((cx, cy, cw, ch, area))
                 
-    # Center crop (covers center 75%)
-    cx1 = int(w * 0.125)
-    cy1 = int(h * 0.125)
-    cx2 = int(w * 0.875)
-    cy2 = int(h * 0.875)
+        # Sort by anomaly intensity
+        clusters = sorted(clusters, key=lambda c: np.mean(anomaly_score[c[1]:c[1]+c[3], c[0]:c[0]+c[2]]), reverse=True)
+        for cx, cy, cw, ch, area in clusters[:5]:
+            pad_x = int(cw * 0.25)
+            pad_y = int(ch * 0.25)
+            lx1, ly1 = max(0, cx - pad_x), max(0, cy - pad_y)
+            lx2, ly2 = min(w, cx + cw + pad_x), min(h, cy + ch + pad_y)
+            if (lx2 - lx1) >= 40 and (ly2 - ly1) >= 40:
+                crops.append(pil_img.crop((lx1, ly1, lx2, ly2)))
+                
+    cx1, cy1 = int(w * 0.125), int(h * 0.125)
+    cx2, cy2 = int(w * 0.875), int(h * 0.875)
     crops.append(pil_img.crop((cx1, cy1, cx2, cy2)))
     return crops
 
 def diagnose_multiscale(model, pil_img: Image.Image, device, transforms_fn):
     """
-    Performs dual-stream lesion-aware clinical diagnosis.
+    Performs dual-stream lesion-aware clinical CAD diagnosis.
     Evaluates both the global contextual presentation and focal lesion candidate regions,
-    guaranteeing that both localized burns and intact healthy skin are accurately classified.
+    guaranteeing that localized burns against clothing/backgrounds and intact healthy skin
+    are both classified with maximum clinical precision.
     """
     crops = extract_candidate_crops(pil_img)
     tensors = torch.stack([transforms_fn(c) for c in crops]).to(device)
-    
     with torch.no_grad():
         all_probs = F.softmax(model(tensors), dim=1).cpu().numpy()
         
     global_probs = all_probs[0]
+    crop_burn_scores = all_probs[:, 0] + all_probs[:, 1] + all_probs[:, 2]
     
-    # Calculate cumulative burn scores across all crops: [deg1, deg2, deg3, healthy]
-    crop_burns = all_probs[:, 0] + all_probs[:, 1] + all_probs[:, 2]
-    max_burn_crop_idx = int(np.argmax(crop_burns))
-    max_focal_probs = all_probs[max_burn_crop_idx]
+    # Identify the crop with highest burn evidence
+    max_crop_idx = int(np.argmax(crop_burn_scores))
+    max_burn_score = float(crop_burn_scores[max_crop_idx])
+    focal_burn_probs = all_probs[max_crop_idx]
     
-    # Multi-crop ensemble: 40% global context + 60% focal lesion attention
-    ens_probs = 0.40 * global_probs + 0.60 * max_focal_probs
-    ens_probs = ens_probs / np.sum(ens_probs)
-    
-    p_burn = float(ens_probs[0] + ens_probs[1] + ens_probs[2])
-    p_healthy = float(ens_probs[3])
+    # If a verified focal lesion shows clear burn injury (>= 55%):
+    if max_burn_score >= 0.55:
+        # Lesion detected! Blend focal burn attention (75%) with global context (25%)
+        final_probs = 0.25 * global_probs + 0.75 * focal_burn_probs
+        final_probs = final_probs / np.sum(final_probs)
+        is_burn_diagnosed = True
+        burn_idx = int(np.argmax([final_probs[0], final_probs[1], final_probs[2]]))
+        pred_idx = burn_idx
+        pred_class = CLASS_NAMES[burn_idx]
+        conf = float(final_probs[burn_idx])
+    else:
+        # No focal lesion detected: evaluate overall presentation
+        final_probs = 0.60 * global_probs + 0.40 * focal_burn_probs
+        final_probs = final_probs / np.sum(final_probs)
+        p_burn = float(final_probs[0] + final_probs[1] + final_probs[2])
+        p_healthy = float(final_probs[3])
+        if p_burn >= 0.50 or (p_burn > p_healthy and p_burn >= 0.40):
+            is_burn_diagnosed = True
+            burn_idx = int(np.argmax([final_probs[0], final_probs[1], final_probs[2]]))
+            pred_idx = burn_idx
+            pred_class = CLASS_NAMES[burn_idx]
+            conf = float(final_probs[burn_idx])
+        else:
+            is_burn_diagnosed = False
+            pred_idx = 3
+            pred_class = "healthy"
+            conf = float(p_healthy)
+            
+    p_burn_total = float(final_probs[0] + final_probs[1] + final_probs[2])
+    p_healthy = float(final_probs[3])
     
     # Tissue Biomarker Analysis
     arr = np.array(pil_img, dtype=np.float32)
@@ -169,20 +203,6 @@ def diagnose_multiscale(model, pil_img: Image.Image, device, transforms_fn):
         re_hotspot = float(np.percentile(re_map, 90))
         rg_ratio = float(np.mean(r) / (np.mean(g) + 1e-5))
         
-    # Hierarchical Clinical Triage Decision:
-    # Thermal burn injury is diagnosed if cumulative burn evidence is significant (>=40% or burn > healthy)
-    if p_burn >= 0.40 or (p_burn > p_healthy):
-        is_burn_diagnosed = True
-        burn_idx = int(np.argmax([ens_probs[0], ens_probs[1], ens_probs[2]]))
-        pred_idx = burn_idx
-        pred_class = CLASS_NAMES[burn_idx]
-        conf = float(ens_probs[burn_idx])
-    else:
-        is_burn_diagnosed = False
-        pred_idx = 3
-        pred_class = "healthy"
-        conf = float(p_healthy)
-        
     if pred_class == "healthy":
         status_desc = "Intact Stratum Corneum & Dermis"
         erythema_desc = "Normal Physiological Vascularity"
@@ -190,15 +210,15 @@ def diagnose_multiscale(model, pil_img: Image.Image, device, transforms_fn):
     elif pred_class == "degree_1":
         status_desc = "Superficial Epidermal Injury (Acute Erythema)"
         erythema_desc = "Acute Thermal Hyperemia & Capillary Dilation"
-        triage_summary = f"Thermal Injury Identified (Degree 1 Evidence: {ens_probs[0]*100:.1f}%, Cumulative Burn: {p_burn*100:.1f}%)"
+        triage_summary = f"Thermal Injury Identified (Degree 1 Evidence: {final_probs[0]*100:.1f}%, Cumulative Burn: {p_burn_total*100:.1f}%)"
     elif pred_class == "degree_2":
         status_desc = "Partial-Thickness Blister / Dermal Exudate"
         erythema_desc = "Dermal Microvascular Injury & Epidermal Detachment"
-        triage_summary = f"Thermal Injury Identified (Degree 2 Evidence: {ens_probs[1]*100:.1f}%, Cumulative Burn: {p_burn*100:.1f}%)"
+        triage_summary = f"Thermal Injury Identified (Degree 2 Evidence: {final_probs[1]*100:.1f}%, Cumulative Burn: {p_burn_total*100:.1f}%)"
     else:
         status_desc = "Full-Thickness Coagulation Necrosis / Eschar"
         erythema_desc = "Microvascular Thrombosis & Dermal Necrosis"
-        triage_summary = f"Critical Thermal Injury Identified (Full-Thickness Burn: {ens_probs[2]*100:.1f}%)"
+        triage_summary = f"Critical Thermal Injury Identified (Full-Thickness Burn: {final_probs[2]*100:.1f}%)"
         
     biomarkers = {
         "red_excess_hotspot": re_hotspot,
@@ -207,9 +227,9 @@ def diagnose_multiscale(model, pil_img: Image.Image, device, transforms_fn):
         "erythema_desc": erythema_desc,
         "triage_summary": triage_summary,
         "is_burn_diagnosed": is_burn_diagnosed,
-        "p_burn_total": p_burn,
+        "p_burn_total": p_burn_total,
         "p_healthy": p_healthy,
         "n_crops": len(crops)
     }
     
-    return pred_class, pred_idx, conf, ens_probs, biomarkers
+    return pred_class, pred_idx, conf, final_probs, biomarkers

@@ -111,7 +111,7 @@ if "current_image_name" not in st.session_state:
     st.session_state.current_image_name = "sample.jpg"
 
 weights_path = os.path.join(BASE_DIR, "models", "weights", "best_burn_model.pt")
-weights_version = f"{os.path.getmtime(weights_path)}_{os.path.getsize(weights_path)}_v2_2_lesion_aware" if os.path.exists(weights_path) else "v2_2_lesion_aware"
+weights_version = f"{os.path.getmtime(weights_path)}_{os.path.getsize(weights_path)}_v2_3_focal_cad" if os.path.exists(weights_path) else "v2_3_focal_cad"
 
 @st.cache_resource
 def load_diagnostic_resources(version_token: str):
@@ -179,7 +179,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption("AI Model Diagnostics")
-    st.success("🟢 Model: ResNet-18 (Dual-Stream Lesion-Aware v2.2)")
+    st.success("🟢 Model: ResNet-18 (Dual-Stream Focal CAD v2.3)")
     if st.button("🔄 Reload Model / Reset Cache", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
