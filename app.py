@@ -18,7 +18,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from models.cnn_model import BurnCNN, get_transforms, CLASS_NAMES, CLASS_DISPLAY
+from models.cnn_model import BurnCNN, get_transforms, CLASS_NAMES, CLASS_DISPLAY, diagnose_multiscale
 from models.gradcam import GradCAM
 from web_app.recommendation_engine import AyurvedicRecommendationEngine
 from web_app.auth import register_user, authenticate_user, log_scan, get_scans_for_user
@@ -111,7 +111,7 @@ if "current_image_name" not in st.session_state:
     st.session_state.current_image_name = "sample.jpg"
 
 weights_path = os.path.join(BASE_DIR, "models", "weights", "best_burn_model.pt")
-weights_version = f"{os.path.getmtime(weights_path)}_{os.path.getsize(weights_path)}" if os.path.exists(weights_path) else "v1"
+weights_version = f"{os.path.getmtime(weights_path)}_{os.path.getsize(weights_path)}_v2_2_lesion_aware" if os.path.exists(weights_path) else "v2_2_lesion_aware"
 
 @st.cache_resource
 def load_diagnostic_resources(version_token: str):
@@ -120,7 +120,7 @@ def load_diagnostic_resources(version_token: str):
     
     model = BurnCNN(num_classes=len(CLASS_NAMES), pretrained=False)
     if os.path.exists(weights_path):
-        model.load_state_dict(torch.load(weights_path, map_location=device))
+        model.load_state_dict(torch.load(weights_path, map_location=device, weights_only=True))
     model = model.to(device)
     model.eval()
 
@@ -179,7 +179,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption("AI Model Diagnostics")
-    st.success("🟢 Model: ResNet-18 (Build 98193f3)")
+    st.success("🟢 Model: ResNet-18 (Dual-Stream Lesion-Aware v2.2)")
     if st.button("🔄 Reload Model / Reset Cache", use_container_width=True):
         st.cache_resource.clear()
         st.rerun()
@@ -244,38 +244,17 @@ if menu == "🔍 Diagnostic Studio":
     with col_right:
         st.subheader("2. AI Diagnosis & Grad-CAM Analysis")
         if selected_pil is not None:
-            # Run Inference
+            # ----------------- LESION-AWARE MULTI-SCALE DIAGNOSTIC ENGINE -----------------
+            pred_class, pred_idx, confidence, probs, biomarkers = diagnose_multiscale(
+                model, selected_pil, device, transforms
+            )
+            is_burn_diagnosed = biomarkers["is_burn_diagnosed"]
+            p_burn_total = biomarkers["p_burn_total"]
+            p_healthy = biomarkers["p_healthy"]
+
+            # Compute Grad-CAM on Global View for Diagnosed Class Activation
             input_tensor = transforms(selected_pil).unsqueeze(0).to(device)
-            
             with torch.set_grad_enabled(True):
-                outputs = model(input_tensor)
-                probs = F.softmax(outputs, dim=1).detach().cpu().numpy()[0]
-
-                # ----------------- BAYES-OPTIMAL MAP CLASSIFICATION -----------------
-                # CLASS_NAMES = ["degree_1", "degree_2", "degree_3", "healthy"]
-                pred_idx = int(np.argmax(probs))
-                pred_class = CLASS_NAMES[pred_idx]
-                confidence = float(probs[pred_idx])
-                is_burn_diagnosed = (pred_class != "healthy")
-                p_burn_total = float(probs[0] + probs[1] + probs[2])
-                p_healthy = float(probs[3])
-
-                # Tissue Hotspot Biomarker Analysis (excludes neutral studio walls & gray sheets)
-                arr_rgb = np.array(selected_pil, dtype=np.float32)
-                r_chan, g_chan, b_chan = arr_rgb[:, :, 0], arr_rgb[:, :, 1], arr_rgb[:, :, 2]
-                is_neutral_bg = (np.abs(r_chan - g_chan) < 14) & (np.abs(r_chan - b_chan) < 14)
-                is_extreme = (r_chan < 30) | (r_chan > 245)
-                tissue_mask = ~(is_neutral_bg | is_extreme)
-                red_excess_map = r_chan - (g_chan + b_chan) / 2.0
-
-                if np.any(tissue_mask):
-                    red_excess_hotspot = float(np.percentile(red_excess_map[tissue_mask], 90))
-                    rg_ratio = float(np.mean(r_chan[tissue_mask]) / (np.mean(g_chan[tissue_mask]) + 1e-5))
-                else:
-                    red_excess_hotspot = float(np.percentile(red_excess_map, 90))
-                    rg_ratio = float(np.mean(r_chan) / (np.mean(g_chan) + 1e-5))
-
-                # Grad-CAM heatmap
                 heatmap = gradcam.generate_heatmap(input_tensor, target_class=pred_idx)
                 blended_pil, colored_cam = gradcam.overlay_heatmap(selected_pil, heatmap, alpha=alpha_val)
 
@@ -311,19 +290,16 @@ if menu == "🔍 Diagnostic Studio":
                 st.write(f"• **{CLASS_DISPLAY[c_name]}**: {pct:.1f}%")
                 st.progress(min(pct / 100.0, 1.0))
 
-            # Tissue Biomarker Summary
-            status_desc = "Intact Stratum Corneum & Dermis" if pred_class == "healthy" else ("Superficial Epidermal Injury (Erythema)" if pred_class == "degree_1" else ("Partial-Thickness Blister / Dermal Exudate" if pred_class == "degree_2" else "Full-Thickness Coagulation Necrosis / Eschar"))
-            erythema_desc = "Normal Baseline" if red_excess_hotspot < 30.0 else ("Moderate Erythema" if red_excess_hotspot < 50.0 else "Acute Inflammatory Hyperemia / Dermal Injury")
-            triage_summary = f"Thermal Injury Identified (Cumulative Burn Evidence: {p_burn_total*100:.1f}% vs. Healthy: {p_healthy*100:.1f}%)" if is_burn_diagnosed else f"Intact Epidermal Barrier Confirmed (Healthy Skin Evidence: {p_healthy*100:.1f}%)"
-
+            # Multi-Scale Biomarker & Triage Summary
             st.markdown(f"""
             <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-top: 10px; margin-bottom: 12px;">
                 <p style="margin: 0; font-size: 0.85rem; color: #475569;">
-                    <b>🔬 Clinical Triage & Biomarker Assessment:</b><br/>
-                    • <b>Triage Assessment:</b> {triage_summary}<br/>
-                    • <b>Lesion Hotspot Erythema:</b> {red_excess_hotspot:.1f} ({erythema_desc})<br/>
-                    • <b>Tissue Chromophore Ratio (R/G):</b> {rg_ratio:.2f}<br/>
-                    • <b>Integumentary Barrier Status:</b> {status_desc}
+                    <b>🔬 Multi-Scale Clinical Triage & Biomarker Assessment:</b><br/>
+                    • <b>Triage Assessment:</b> {biomarkers['triage_summary']}<br/>
+                    • <b>Spatial Analysis Coverage:</b> {biomarkers['n_crops']} ROIs (Global Frame + High-Resolution Lesion Focal Scans)<br/>
+                    • <b>Lesion Vascularity:</b> {biomarkers['red_excess_hotspot']:.1f} ({biomarkers['erythema_desc']})<br/>
+                    • <b>Tissue Chromophore Ratio (R/G):</b> {biomarkers['rg_ratio']:.2f}<br/>
+                    • <b>Integumentary Barrier Status:</b> {biomarkers['status_desc']}
                 </p>
             </div>
             """, unsafe_allow_html=True)
