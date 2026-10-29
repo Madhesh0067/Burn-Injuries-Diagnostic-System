@@ -124,15 +124,15 @@ def train_model(epochs: int = 6, batch_size: int = 16, lr: float = 1e-3):
         history["val_loss"].append(round(epoch_val_loss, 4))
         history["val_acc"].append(round(epoch_val_acc * 100, 2))
 
-        print(f"Train Loss: {epoch_train_loss:.4f} | Train Acc: {epoch_train_acc*100:.2f}%")
-        print(f"Val Loss:   {epoch_val_loss:.4f} | Val Acc:   {epoch_val_acc*100:.2f}%")
+        print(f"Train Loss: {epoch_train_loss:.4f} | Train Acc: {epoch_train_acc*100:.2f}%", flush=True)
+        print(f"Val Loss:   {epoch_val_loss:.4f} | Val Acc:   {epoch_val_acc*100:.2f}%", flush=True)
 
         if epoch_val_acc >= best_val_acc:
             best_val_acc = epoch_val_acc
             best_model_wts = copy.deepcopy(model.state_dict())
 
     time_elapsed = time.time() - start_time
-    print(f"\nTraining completed in {time_elapsed//60:.0f}m {time_elapsed%60:.0f}s. Best Val Acc: {best_val_acc*100:.2f}%")
+    print(f"\nTraining completed in {time_elapsed//60:.0f}m {time_elapsed%60:.0f}s. Best Val Acc: {best_val_acc*100:.2f}%", flush=True)
 
     # Save Best Model Weights
     best_weights_path = os.path.join(WEIGHTS_DIR, "best_burn_model.pt")
@@ -218,4 +218,4 @@ def train_model(epochs: int = 6, batch_size: int = 16, lr: float = 1e-3):
     print("All training artifacts & evaluation charts successfully saved in models/weights/")
 
 if __name__ == "__main__":
-    train_model(epochs=6, batch_size=16, lr=1e-3)
+    train_model(epochs=5, batch_size=16, lr=1e-3)
