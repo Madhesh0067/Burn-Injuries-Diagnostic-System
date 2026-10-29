@@ -120,7 +120,11 @@ def load_diagnostic_resources(version_token: str):
     
     model = BurnCNN(num_classes=len(CLASS_NAMES), pretrained=False)
     if os.path.exists(weights_path):
-        model.load_state_dict(torch.load(weights_path, map_location=device, weights_only=True))
+        try:
+            state_dict = torch.load(weights_path, map_location=device, weights_only=True)
+        except Exception:
+            state_dict = torch.load(weights_path, map_location=device)
+        model.load_state_dict(state_dict)
     model = model.to(device)
     model.eval()
 

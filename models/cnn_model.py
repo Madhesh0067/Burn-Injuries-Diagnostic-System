@@ -3,13 +3,19 @@ CNN Model Architecture for Burn Injuries Diagnostic System.
 Supports Transfer Learning with ResNet-18 / MobileNetV3 for 4-class burn classification.
 """
 
-import cv2
 import numpy as np
+import scipy.ndimage as ndi
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models, transforms
 from PIL import Image
+
+try:
+    import cv2
+    HAS_CV2 = True
+except Exception:
+    HAS_CV2 = False
 
 CLASS_NAMES = ["degree_1", "degree_2", "degree_3", "healthy"]
 
@@ -78,32 +84,34 @@ def extract_candidate_crops(pil_img: Image.Image):
     Extracts multi-scale and lesion-focused region-of-interest (ROI) candidate crops.
     Ensures that localized erythematous or blistered lesions are inspected at high resolution
     without being diluted by surrounding unburned healthy skin or clothing/background.
+    Implemented with pure NumPy and SciPy for complete cross-platform stability.
     """
     w, h = pil_img.size
     crops = [pil_img]
     arr = np.array(pil_img, dtype=np.float32)
     r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
     
-    # Human skin segmentation in YCbCr + RGB
-    ycbcr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2YCrCb)
-    cr = ycbcr[:, :, 1]
-    cb = ycbcr[:, :, 2]
-    skin_mask = (cr >= 130) & (cr <= 180) & (cb >= 75) & (cb <= 140) & (r > g) & (r > b) & (r > 50)
+    # Pure NumPy YCbCr conversion
+    y = 0.299 * r + 0.587 * g + 0.114 * b
+    cb = 128.0 - 0.168736 * r - 0.331264 * g + 0.5 * b
+    cr = 128.0 + 0.5 * r - 0.418688 * g - 0.081312 * b
     
+    skin_mask = (cr >= 130) & (cr <= 180) & (cb >= 75) & (cb <= 140) & (r > g) & (r > b) & (r > 50)
     if np.sum(skin_mask) < 200:
         is_neutral = (np.abs(r - g) < 14) & (np.abs(r - b) < 14)
         is_extreme = (r < 30) | (r > 248)
         skin_mask = ~(is_neutral | is_extreme) & (r > g) & (g > b * 0.7)
         
     if np.sum(skin_mask) >= 200:
-        # Localized lesion anomaly (erythema + blister gradient)
         red_excess = r - (g + b) / 2.0
         median_re = np.median(red_excess[skin_mask])
         re_dev = red_excess - median_re
         
-        gray = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2GRAY)
-        grad = cv2.Sobel(gray, cv2.CV_32F, 1, 1)
-        grad_mag = np.abs(grad)
+        gx = np.zeros_like(y)
+        gy = np.zeros_like(y)
+        gx[:, 1:-1] = np.abs(y[:, 2:] - y[:, :-2]) / 2.0
+        gy[1:-1, :] = np.abs(y[2:, :] - y[:-2, :]) / 2.0
+        grad_mag = np.sqrt(gx**2 + gy**2)
         med_grad = np.median(grad_mag[skin_mask])
         grad_dev = grad_mag - med_grad
         
@@ -113,19 +121,23 @@ def extract_candidate_crops(pil_img: Image.Image):
         p90 = np.percentile(anomaly_score[skin_mask], 90)
         lesion_core = (anomaly_score >= p90) & skin_mask
         
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        dilated = cv2.dilate(lesion_core.astype(np.uint8), kernel, iterations=1)
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(dilated)
+        kernel = ndi.generate_binary_structure(2, 2)
+        dilated = ndi.binary_dilation(lesion_core, structure=kernel, iterations=2)
+        labeled, num_features = ndi.label(dilated)
+        slices = ndi.find_objects(labeled)
         
         clusters = []
-        for i in range(1, num_labels):
-            cx, cy, cw, ch, area = stats[i]
-            if area >= 60:
-                clusters.append((cx, cy, cw, ch, area))
-                
-        # Sort by anomaly intensity
-        clusters = sorted(clusters, key=lambda c: np.mean(anomaly_score[c[1]:c[1]+c[3], c[0]:c[0]+c[2]]), reverse=True)
-        for cx, cy, cw, ch, area in clusters[:5]:
+        for idx, slc in enumerate(slices):
+            if slc is not None:
+                area = int(np.sum(labeled[slc] == (idx + 1)))
+                if area >= 60:
+                    ymin, ymax = slc[0].start, slc[0].stop
+                    xmin, xmax = slc[1].start, slc[1].stop
+                    mean_score = float(np.mean(anomaly_score[ymin:ymax, xmin:xmax]))
+                    clusters.append((xmin, ymin, xmax - xmin, ymax - ymin, area, mean_score))
+                    
+        clusters = sorted(clusters, key=lambda c: c[5], reverse=True)
+        for cx, cy, cw, ch, area, score in clusters[:5]:
             pad_x = int(cw * 0.25)
             pad_y = int(ch * 0.25)
             lx1, ly1 = max(0, cx - pad_x), max(0, cy - pad_y)
