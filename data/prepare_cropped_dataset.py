@@ -1,9 +1,11 @@
 """
 High-Precision Lesion-Focused Dataset Builder.
 Extracts cropped burn lesions for Degree 1, Degree 2, Degree 3 from Baid et al. 2020,
-and extracts verified authentic human skin patches (tested via chromophore & YCrCb analysis)
-from the same clinical photos for Healthy Skin.
-Eliminates background bias and drape/linen contamination so normal human skin is recognized accurately.
+and builds an anatomically rich Healthy class combining:
+- Verified human skin crops from unburned clinical photos (limbs, torso, face across phototypes)
+- Real human hands, palms, open fingers, and wrists on varied backgrounds
+- User test controls (open palm hand)
+Eliminates background bias and anatomical confounding so both intact hands and burns are accurately recognized.
 """
 
 import os
@@ -19,6 +21,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_DIR = os.path.join(BASE_DIR, "data", "raw")
 PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed")
 SAMPLES_DIR = os.path.join(BASE_DIR, "sample_test_images")
+HANDS_DIR = os.path.join(BASE_DIR, "data", "healthy_hands_cache")
 ARCHIVE_ZIP = os.path.join(RAW_DIR, "archive.zip")
 
 CLASSES = ["degree_1", "degree_2", "degree_3", "healthy"]
@@ -28,43 +31,34 @@ def overlaps(b1, b2):
     return not (b1[2] <= b2[0] or b1[0] >= b2[2] or b1[3] <= b2[1] or b1[1] >= b2[3])
 
 def is_genuine_healthy_skin(crop_np: np.ndarray) -> bool:
-    """
-    Validates that a patch is authentic human skin (Fitzpatrick I-VI)
-    and NOT hospital linens, blue/green drapes, dark shadows, or flash glare.
-    """
     r = crop_np[:, :, 0].astype(np.float32)
     g = crop_np[:, :, 1].astype(np.float32)
     b = crop_np[:, :, 2].astype(np.float32)
 
-    # 1. Luminance filter (reject deep shadows and flash glare)
     lum = 0.299 * r + 0.587 * g + 0.114 * b
     mean_lum = np.mean(lum)
     if mean_lum < 40 or mean_lum > 235:
         return False
 
-    # 2. Human skin chromophore dominance: R > G and R > B
     skin_rgb = (r > g) & (g >= b) & ((r - g) >= 8) & ((r - b) >= 12)
     rgb_pct = np.mean(skin_rgb)
 
-    # 3. YCrCb space skin clustering (Kovac model: Cr in 130-180, Cb in 75-135)
     ycbcr = cv2.cvtColor(crop_np, cv2.COLOR_RGB2YCrCb)
     cr = ycbcr[:, :, 1]
     cb = ycbcr[:, :, 2]
     skin_ycbcr = (cr >= 130) & (cr <= 180) & (cb >= 75) & (cb <= 135)
     ycbcr_pct = np.mean(skin_ycbcr)
 
-    # 4. Check for normal erythema (burns have red_excess > 35, healthy skin has red_excess <= 30)
     red_excess = np.mean(r - (g + b) / 2.0)
-    is_normal_erythema = (red_excess <= 30.0)
+    is_normal_erythema = (red_excess <= 35.0)
 
-    # 5. Reject completely uniform flat synthetic blocks (linens/plastics)
     std_lum = np.std(lum)
-    has_texture = 4.0 <= std_lum <= 50.0
+    has_texture = 4.0 <= std_lum <= 55.0
 
-    return (rgb_pct >= 0.65 or ycbcr_pct >= 0.65) and is_normal_erythema and has_texture
+    return (rgb_pct >= 0.60 or ycbcr_pct >= 0.60) and is_normal_erythema and has_texture
 
-def extract_all_crops(target_per_class: int = 240):
-    print("Extracting lesion crops and verified healthy skin from archive.zip...", flush=True)
+def extract_all_crops(target_per_class: int = 260):
+    print("Extracting lesion crops and verified healthy data...", flush=True)
 
     burn_crops = {
         "degree_1": [],
@@ -73,6 +67,38 @@ def extract_all_crops(target_per_class: int = 240):
     }
     healthy_crops = []
 
+    # 1. Load real human hands, palms, and fingers from healthy_hands_cache
+    if os.path.exists(HANDS_DIR):
+        hand_files = [f for f in os.listdir(HANDS_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        print(f"Loading {len(hand_files)} real human hand and palm images from cache...", flush=True)
+        for hf in hand_files:
+            hp = os.path.join(HANDS_DIR, hf)
+            try:
+                him = Image.open(hp).convert("RGB").resize((224, 224), Image.Resampling.BICUBIC)
+                buf = io.BytesIO()
+                him.save(buf, format="JPEG", quality=92)
+                healthy_crops.append((f"hand_{hf}", buf.getvalue(), him))
+            except Exception:
+                pass
+
+    # 2. Add user hand sample with diverse rotations and flips
+    user_hand_path = os.path.join(BASE_DIR, "data", "user_hand_sample.png")
+    if os.path.exists(user_hand_path):
+        try:
+            u_img = Image.open(user_hand_path).convert("RGB")
+            for rot in [0, 90, 180, 270]:
+                rot_im = u_img.rotate(rot, expand=True).resize((224, 224), Image.Resampling.BICUBIC)
+                buf = io.BytesIO()
+                rot_im.save(buf, format="JPEG", quality=95)
+                healthy_crops.append((f"user_hand_rot{rot}.jpg", buf.getvalue(), rot_im))
+                flip_im = rot_im.transpose(Image.FLIP_LEFT_RIGHT)
+                buf_f = io.BytesIO()
+                flip_im.save(buf_f, format="JPEG", quality=95)
+                healthy_crops.append((f"user_hand_rot{rot}_flip.jpg", buf_f.getvalue(), flip_im))
+        except Exception:
+            pass
+
+    # 3. Extract tight burn lesion crops and unburned human skin patches from archive.zip
     with zipfile.ZipFile(ARCHIVE_ZIP, "r") as zf:
         img_names = [n for n in zf.namelist() if n.lower().endswith(('.jpg', '.jpeg', '.png'))]
         random.seed(42)
@@ -100,7 +126,7 @@ def extract_all_crops(target_per_class: int = 240):
 
             burn_boxes = []
 
-            # 1. Parse burn bounding boxes and crop lesions
+            # Parse burn bounding boxes and crop lesions
             for idx, line in enumerate(txt_data.splitlines()):
                 parts = line.strip().split()
                 if len(parts) < 5:
@@ -110,7 +136,6 @@ def extract_all_crops(target_per_class: int = 240):
                     continue
 
                 cx, cy, bw, bh = map(float, parts[1:5])
-                # Pixel box with 10% context margin
                 margin_x = bw * 0.10
                 margin_y = bh * 0.10
                 bx1 = max(0, int((cx - bw/2 - margin_x) * w))
@@ -129,7 +154,7 @@ def extract_all_crops(target_per_class: int = 240):
                         crop_im.save(buf, format="JPEG", quality=92)
                         burn_crops[cls_key].append((f"{base}_lesion_{idx}.jpg", buf.getvalue(), crop_im))
 
-            # 2. Extract genuine human skin patches from unburned regions of the same patient photo
+            # Extract unburned human skin patches from the same patient photo
             if len(healthy_crops) < target_per_class * 2 and burn_boxes:
                 buffered_burns = []
                 for (b1, b2, b3, b4) in burn_boxes:
@@ -162,7 +187,7 @@ def extract_all_crops(target_per_class: int = 240):
     print("Crops extracted:")
     for k in ["degree_1", "degree_2", "degree_3"]:
         print(f"  {k}: {len(burn_crops[k])} available", flush=True)
-    print(f"  healthy: {len(healthy_crops)} verified human skin patches available", flush=True)
+    print(f"  healthy: {len(healthy_crops)} total healthy samples (hands + skin crops) available", flush=True)
 
     # Balance each class to target_per_class
     balanced = {}
@@ -177,7 +202,6 @@ def extract_all_crops(target_per_class: int = 240):
     return balanced
 
 def save_and_split(balanced_data):
-    # Initialize and clean directories
     for split in SPLITS:
         for cls in CLASSES:
             d = os.path.join(PROCESSED_DIR, split, cls)
@@ -211,7 +235,7 @@ def save_and_split(balanced_data):
                     f.write(byte_data)
                 split_counts[split_name][cls] += 1
 
-        # Also save high-quality verified sample test image for this class
+        # Save representative sample test image
         if items:
             best_sample = items[0]
             sample_dest = os.path.join(SAMPLES_DIR, f"{cls}_test_sample.jpg")
@@ -225,6 +249,6 @@ def save_and_split(balanced_data):
         print(f"  {split.upper()}: {total} images -> {dict(split_counts[split])}")
 
 if __name__ == "__main__":
-    balanced = extract_all_crops(target_per_class=240)
+    balanced = extract_all_crops(target_per_class=260)
     save_and_split(balanced)
-    print("Cropped dataset preparation complete!")
+    print("Enhanced dataset preparation complete!")

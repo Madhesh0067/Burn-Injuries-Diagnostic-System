@@ -247,19 +247,19 @@ if menu == "🔍 Diagnostic Studio":
                 p_burn_total = float(probs[0] + probs[1] + probs[2])
                 p_healthy = float(probs[3])
 
-                if p_burn_total >= p_healthy:
+                if p_healthy >= p_burn_total:
+                    # Intact skin confirmed
+                    pred_idx = 3
+                    pred_class = "healthy"
+                    confidence = float(p_healthy)
+                    is_burn_diagnosed = False
+                else:
                     # Definite thermal injury detected: Select predominant burn severity grade
                     burn_indices = [0, 1, 2]
                     pred_idx = int(burn_indices[int(np.argmax([probs[0], probs[1], probs[2]]))])
                     pred_class = CLASS_NAMES[pred_idx]
-                    confidence = round(max(float(probs[pred_idx]), p_burn_total) * 100, 2)
+                    confidence = float(probs[pred_idx])
                     is_burn_diagnosed = True
-                else:
-                    # Intact skin confirmed
-                    pred_idx = 3
-                    pred_class = "healthy"
-                    confidence = round(p_healthy * 100, 2)
-                    is_burn_diagnosed = False
 
                 # Tissue Hotspot Biomarker Analysis (excludes neutral studio walls & gray sheets)
                 arr_rgb = np.array(selected_pil, dtype=np.float32)

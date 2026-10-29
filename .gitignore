@@ -20,6 +20,8 @@ data/processed/
 *.sqlite3
 data/scans_cache/
 data/reports/
+data/healthy_hands_cache/
+data/*.png
 .cache/
 
 # OS artifacts
