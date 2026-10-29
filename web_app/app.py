@@ -109,8 +109,11 @@ if "current_image" not in st.session_state:
 if "current_image_name" not in st.session_state:
     st.session_state.current_image_name = "sample.jpg"
 
+weights_path = os.path.join(BASE_DIR, "models", "weights", "best_burn_model.pt")
+weights_version = f"{os.path.getmtime(weights_path)}_{os.path.getsize(weights_path)}" if os.path.exists(weights_path) else "v1"
+
 @st.cache_resource
-def load_diagnostic_resources():
+def load_diagnostic_resources(version_token: str):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     weights_path = os.path.join(BASE_DIR, "models", "weights", "best_burn_model.pt")
     
@@ -127,7 +130,7 @@ def load_diagnostic_resources():
 
     return model, gradcam, transforms, rec_engine, device
 
-model, gradcam, transforms, rec_engine, device = load_diagnostic_resources()
+model, gradcam, transforms, rec_engine, device = load_diagnostic_resources(weights_version)
 
 # Sidebar Navigation & Auth
 with st.sidebar:
@@ -172,6 +175,13 @@ with st.sidebar:
                         st.success(res["message"])
                     else:
                         st.error(res["message"])
+
+    st.markdown("---")
+    st.caption("AI Model Diagnostics")
+    st.success("🟢 Model: ResNet-18 (Build 98193f3)")
+    if st.button("🔄 Reload Model / Reset Cache", use_container_width=True):
+        st.cache_resource.clear()
+        st.rerun()
 
     st.markdown("---")
     menu = st.radio(
@@ -240,25 +250,14 @@ if menu == "🔍 Diagnostic Studio":
                 outputs = model(input_tensor)
                 probs = F.softmax(outputs, dim=1).detach().cpu().numpy()[0]
 
-                # ----------------- HIERARCHICAL CLINICAL TRIAGE -----------------
+                # ----------------- BAYES-OPTIMAL MAP CLASSIFICATION -----------------
                 # CLASS_NAMES = ["degree_1", "degree_2", "degree_3", "healthy"]
-                # Medical decision protocol: Thermal Injury Detection vs. Intact Integument
+                pred_idx = int(np.argmax(probs))
+                pred_class = CLASS_NAMES[pred_idx]
+                confidence = float(probs[pred_idx])
+                is_burn_diagnosed = (pred_class != "healthy")
                 p_burn_total = float(probs[0] + probs[1] + probs[2])
                 p_healthy = float(probs[3])
-
-                if p_healthy >= p_burn_total:
-                    # Intact skin confirmed
-                    pred_idx = 3
-                    pred_class = "healthy"
-                    confidence = float(p_healthy)
-                    is_burn_diagnosed = False
-                else:
-                    # Definite thermal injury detected: Select predominant burn severity grade
-                    burn_indices = [0, 1, 2]
-                    pred_idx = int(burn_indices[int(np.argmax([probs[0], probs[1], probs[2]]))])
-                    pred_class = CLASS_NAMES[pred_idx]
-                    confidence = float(probs[pred_idx])
-                    is_burn_diagnosed = True
 
                 # Tissue Hotspot Biomarker Analysis (excludes neutral studio walls & gray sheets)
                 arr_rgb = np.array(selected_pil, dtype=np.float32)
